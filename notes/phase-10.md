@@ -1153,6 +1153,29 @@ on:
   - Destroys 2 resources; releases DynamoDB lock.
   - Verified in AWS EC2 Console: Instance state = `Terminated`. Site at previous IP is completely offline.
 
+```text
+✓ main Terraform GitOps CI/CD · 42028596035
+✓ Terraform Plan & Apply in 1m21s (ID 127248963562)
+  ✓ Set up job
+  ✓ Checkout Code
+  ✓ Inspect OIDC Token Claims
+  ✓ Configure AWS Credentials via OIDC
+  ✓ Setup Terraform
+  ✓ Terraform Init
+  ✓ Terraform Validate
+  - Terraform Plan (Skipped)
+  - Terraform Apply (Skipped)
+  ✓ Terraform Destroy (Executed)
+  ✓ Complete job
+
+aws_instance.wp: Destroying... [id=i-0af3a3266517a12c6]
+aws_security_group.web: Destruction complete after 1s
+Destroy complete! Resources: 2 destroyed.
+```
+
+![Workflow Dispatch Destroy Triggered](images/p10-step10-workflow-dispatch-destroy-prompt.png)
+*Terminal State:* Executed `gh workflow run terraform.yml -f action=destroy`. Pipeline run `#42028596035` executed `terraform destroy -auto-approve` in 1m 21s via passwordless OIDC, completely destroying the compute and firewall tier.
+
 ### 3. Execution Phase B: Automated Rebuild (`terraform apply`):
 - **Command:** `gh workflow run terraform.yml -f action=apply`
 - **Result:**
