@@ -1,0 +1,57 @@
+name: "Terraform GitOps CI/CD"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  id-token: write # Required for requesting the OIDC JWT token from GitHub
+  contents: read  # Required for actions/checkout to read repo contents
+
+jobs:
+  terraform:
+    name: "Terraform Plan & Apply"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+
+    steps:
+      # 1. Checkout repository code
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. Authenticate to AWS via OIDC (Zero Static Keys!)
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::538820337783:role/GitHubActionsTerraformRole
+          aws-region: ap-south-1
+
+      # 3. Setup Terraform CLI on the runner
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.0
+
+      # 4. Initialize Terraform against Remote S3 Backend + DynamoDB Lock
+      - name: Terraform Init
+        run: terraform init
+
+      # 5. Validate HCL Syntax
+      - name: Terraform Validate
+        run: terraform validate
+
+      # 6. Generate Execution Plan
+      - name: Terraform Plan
+        run: terraform plan -no-color
+
+      # 7. Apply Changes Automatically (Only on Merge to Main)
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform apply -auto-approve
+

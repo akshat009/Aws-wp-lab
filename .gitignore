@@ -1,0 +1,29 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors / IDEs
+.vscode/
+.idea/
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+*.key
+*.csv
+
+# Logs
+*.log
+
+# Dependencies
+node_modules/
+vendor/
+
+# Terraform
+*.tfstate
+*.tfstate.backup
+.terraform/
+
+# WordPress
+wp-config.php
