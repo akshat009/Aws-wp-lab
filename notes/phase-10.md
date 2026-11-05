@@ -165,8 +165,8 @@ Agar `aws_s3_bucket` aur `backend "s3"` ek hi folder ke `main.tf` mein likh diye
   - Configured passwordless GitHub Actions GitOps workflow with IAM OIDC authentication (`sts.amazonaws.com`).
   - Verified automated `terraform init`, `validate`, `plan`, and `apply` execution: 100% green (`✓ 46s`), zero-drift (`0 added, 0 changed, 0 destroyed`).
   - Configure automated `terraform plan` on Pull Requests and `terraform apply` on merge to `main`.
-- [ ] **Step 9: Revoke & Delete Root Access Keys**
-  - Enforce Zero-Trust Security by deleting all static access keys from AWS Console.
+- [x] **Step 9: Revoke & Delete Root Access Keys**
+  - Enforced Zero-Trust Security by permanently deleting static root access key `AKIAX25BR4B3TYTG22TW` from AWS Console. All infrastructure operations now authenticate exclusively via ephemeral 15-minute STS tokens assumed by GitHub Actions OIDC.
 - [ ] **Step 10: Verify "Done When" Criteria (Teardown & Automated Rebuild)**
   - Run `terraform destroy` ➔ Confirm complete, 100% clean teardown in AWS Console.
   - Run `terraform apply` ➔ Confirm entire WordPress cloud stack rebuilds cleanly from code.
