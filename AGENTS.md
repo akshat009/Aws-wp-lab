@@ -38,40 +38,19 @@ Everything is torn down at the end of each session.
 
 ---
 
-## Current phase: 10 (In Progress — Level 1 Done, Level 2 Ready for Tomorrow)
+## Current phase: 11 (Phase 10 Completed & Verified ✅)
 
-Phase 10 Level 1 (Local Prototyping & Bootstrap) completed and verified:
-- Terraform v1.16.6 installed locally on Windows.
-- Infrastructure workspace `infra/` authored: `main.tf`, `variables.tf`, `outputs.tf`, `install.sh`.
-- Terraform core workflow validated (`init`, `validate`, `plan`).
-- `terraform apply` provisioned `aws_security_group.web` (`sg-035e7f0d68fe6d4dd`) and Ubuntu 24.04 instance `aws_instance.wp` (`i-0af3a3266517a12c6`, Dynamic IP `35.154.176.166`).
-- Live WordPress setup screen verified at `http://35.154.176.166/wp-admin/install.php` (`200 OK`).
-- `notes/phase-10.md` fully rewritten with comprehensive architecture diagrams, comparison tables, Gotchas 1–5, and interview Q&As.
+Phase 10 (Codify it — Terraform & Enterprise GitOps) completed and verified:
+- **Level 1 (Local Prototyping):** Terraform v1.16.6 installed; `infra/` provisioned `aws_security_group.web` and Ubuntu 24.04 `aws_instance.wp`. Verified live WordPress setup screen (`200 OK`).
+- **Level 2 (Enterprise GitOps):**
+  - **S3 & DynamoDB Backend:** S3 bucket `wp-lab-tfstate-538820337783` (versioned, SSE-S3 AES256, private) & DynamoDB lock table `wp-lab-tf-locks` provisioned via `bootstrap/main.tf`. Local state migrated cleanly (`terraform init -migrate-state`).
+  - **Zero-Trust IAM OIDC:** AWS IAM Identity Provider `token.actions.githubusercontent.com` and IAM Role `GitHubActionsTerraformRole` established passwordless cryptographic authentication scoped to `repo:akshat009/Aws-wp-lab:*`.
+  - **GitHub Actions Pipeline:** `.github/workflows/terraform.yml` runs automated `terraform init`, `validate`, `plan`, and `apply` on push/merge to `main` with on-demand `workflow_dispatch` destroy/apply options.
+  - **Zero-Trust Enforced:** Deleted static root access key `AKIAX25BR4B3TYTG22TW` from AWS Console.
+  - **Definition of Done Lifecycle Test Verified:** Executed `terraform destroy` via GitHub Actions (terminated instance & security group; site completely offline `ERR_CONNECTION_TIMED_OUT`), followed by `terraform apply` (re-provisioned new instance `i-0fca9a4b647516a51` with new IP `35.154.149.207` in 57s; verified live WordPress installer `200 OK`).
+- `notes/phase-10.md` comprehensive documentation complete with all architecture diagrams, comparison tables, Gotchas 1–12, and interview Q&As (Q1–Q10).
 
-Next session: Phase 10 Level 2 (Enterprise GitOps with OIDC & Remote Backend — S3 State Bucket, DynamoDB Lock, State Migration, IAM OIDC Role, and GitHub Actions CI/CD Pipeline).
-
----
-
-### 📋 Tomorrow Session Startup Checklist (Phase 10 Level 2: Enterprise GitOps)
-
-#### Startup Checklist for Tomorrow:
-- [ ] **Step 1: Check AWS Cloud Resources:**
-  - Verify if EC2 instances are in `Stopped` state.
-  - If starting instances: EC2 Dashboard ➔ select `wp-lab` ➔ Instance state ➔ Start.
-- [ ] **Step 2: Resume Phase 10 at Level 2 - Step 5:**
-  - Open AWS Management Console ➔ Navigate to **Amazon S3**.
-  - Create Remote State Bucket: `wp-lab-tfstate-538820337783` (Region: `ap-south-1`, Versioning: **Enable**, Block Public Access: **On**).
-- [ ] **Step 3: Level 2 - Step 6 (DynamoDB State Lock):**
-  - Navigate to **DynamoDB** ➔ Create table `wp-lab-tf-locks` (Partition key: `LockID` [String]).
-- [ ] **Step 4: Level 2 - Step 7 (Migrate State):**
-  - Add `backend "s3"` block to `infra/main.tf`.
-  - Run `terraform init -migrate-state` in local terminal to push local state to S3.
-- [ ] **Step 5: Level 2 - Steps 8–10 (OIDC & GitHub Actions Pipeline):**
-  - Configure IAM Identity Provider (`token.actions.githubusercontent.com`) and GitHub Actions Role.
-  - Setup `.github/workflows/terraform.yml`.
-- [ ] **Step 6: Phase 10 Definition of Done:**
-  - Execute `terraform destroy` ➔ Verify 100% clean teardown.
-  - Execute `terraform apply` ➔ Verify clean automated rebuild from code.
+Next session: Phase 11 (Cost: Cost Explorer shows a breakdown grouped by my tags).
 
 ---
 

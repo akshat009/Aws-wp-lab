@@ -167,9 +167,9 @@ Agar `aws_s3_bucket` aur `backend "s3"` ek hi folder ke `main.tf` mein likh diye
   - Configure automated `terraform plan` on Pull Requests and `terraform apply` on merge to `main`.
 - [x] **Step 9: Revoke & Delete Root Access Keys**
   - Enforced Zero-Trust Security by permanently deleting static root access key `AKIAX25BR4B3TYTG22TW` from AWS Console. All infrastructure operations now authenticate exclusively via ephemeral 15-minute STS tokens assumed by GitHub Actions OIDC.
-- [ ] **Step 10: Verify "Done When" Criteria (Teardown & Automated Rebuild)**
-  - Run `terraform destroy` ➔ Confirm complete, 100% clean teardown in AWS Console.
-  - Run `terraform apply` ➔ Confirm entire WordPress cloud stack rebuilds cleanly from code.
+- [x] **Step 10: Verify "Done When" Criteria (Teardown & Automated Rebuild)**
+  - Executed `terraform destroy` via GitHub Actions pipeline run `#42028596035`: Terminated old EC2 (`i-0af3a3266517a12c6`) and Security Group in 1m 21s; verified site dead (`ERR_CONNECTION_TIMED_OUT`).
+  - Executed `terraform apply` via GitHub Actions pipeline run `#42028951514`: Provisioned brand-new EC2 (`i-0fca9a4b647516a51`) and new IP (`35.154.149.207`) in 57s; verified live WordPress installer at `http://35.154.149.207/wp-admin/install.php` (`200 OK`).
 
 </details>
 
@@ -1180,13 +1180,34 @@ Destroy complete! Resources: 2 destroyed.
 *Browser State:* Attempted to access `http://35.154.176.166`. Browser returned `ERR_CONNECTION_TIMED_OUT` ("This site can't be reached"), definitively confirming 100% cloud teardown of the EC2 instance and Security Group.
 
 ### 3. Execution Phase B: Automated Rebuild (`terraform apply`):
-- **Command:** `gh workflow run terraform.yml -f action=apply`
-- **Result:**
-  - Terraform re-authenticates via OIDC, acquires DynamoDB lock.
-  - Provisions brand-new Security Group and EC2 instance in `ap-south-1`.
-  - EC2 executes `install.sh` bootstrap script, installing Apache, PHP 8.3, and WordPress core.
-  - Output displays new public IP and website URL.
-  - Verified in browser: `http://<New-IP>/wp-admin/install.php` loads cleanly (`200 OK`).
+- **Command:** `gh workflow run terraform.yml -f action=apply` (or automated push to `main`)
+- **Execution Log (GitHub Actions Run `#42028951514`):**
+  ```text
+  ✓ main Terraform GitOps CI/CD · 42028951514
+  ✓ Terraform Plan & Apply in 57s
+    ✓ Set up job
+    ✓ Checkout Code
+    ✓ Inspect OIDC Token Claims
+    ✓ Configure AWS Credentials via OIDC
+    ✓ Setup Terraform
+    ✓ Terraform Init
+    ✓ Terraform Validate
+    ✓ Terraform Plan
+    ✓ Terraform Apply
+    ✓ Complete job
+
+  Apply complete! Resources: 2 added, 0 changed, 0 destroyed.
+
+  Outputs:
+  instance_id = "i-0fca9a4b647516a51"
+  instance_public_dns = "ec2-35-154-149-207.ap-south-1.compute.amazonaws.com"
+  instance_public_ip = "35.154.149.207"
+  website_url = "http://35.154.149.207"
+  ```
+- **Live Verification:**
+  - `http://35.154.149.207/wp-admin/install.php` returned `HTTP 200 OK`.
+  - WordPress setup wizard rendered cleanly, confirming full end-to-end automation from code.
+  - **Phase 10 Definition of Done Officially Met!**
 
 </details>
 
