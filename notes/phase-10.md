@@ -1060,6 +1060,14 @@ wp-config.php
 | **`.terraform/`** | Prevents committing hundreds of megabytes of cached AWS provider binaries and plugins. |
 | **`wp-config.php`, `.env`** | Prevents live WordPress database connection strings and application environment secrets from exposure. |
 
+### 4. Git Push & Pipeline Trigger Evidence:
+
+![Git Push Main Success](images/p10-step8-git-push-main-success.png)
+*Console State:* Executed `git push -u origin main` in PowerShell. Successfully transferred 441 objects (31.99 MiB) to `https://github.com/akshat009/Aws-wp-lab.git` setting up `main` branch to track `origin/main`. Automated GitHub Actions workflow immediately triggered on push.
+
+![GitHub Actions All Workflows Dashboard](images/p10-step8-github-actions-all-workflows-list.png)
+*Console State:* In **GitHub ➔ Actions**, verified workflow `Terraform GitOps CI/CD` triggered automatically from the commit. Displays the execution record for `feat: phase 10 enterprise gitops terraform with oidc` on branch `main`.
+
 </details>
 
 ---
@@ -1175,6 +1183,139 @@ wp-config.php
      git add .
      ```
   4. In large-scale enterprise environments with independent release lifecycles across repositories, use official Git submodules (`git submodule add <url> <path>`) instead of ad-hoc nested Git directories.
+
+### Gotcha 9: GitHub Push Rejected — Missing `workflow` Scope for GitHub Actions
+- **Symptom:** Running `git push` or `gh repo create --push` rejects the push with:
+  ```text
+  ! [remote rejected] HEAD -> main (refusing to allow an OAuth App to create or update workflow '.github/workflows/terraform.yml' without 'workflow' scope)
+  error: failed to push some refs to 'https://github.com/akshat009/Aws-wp-lab.git'
+  failed to run git: exit status 1
+  ```
+
+![GitHub Push Rejected Missing Workflow Scope](images/p10-gotcha9-github-push-workflow-scope-error.png)
+*Console State:* Terminal shows repository `akshat009/Aws-wp-lab` created successfully on GitHub and remote added. However, Git rejected pushing `main` because GitHub CLI's OAuth token did not possess the privileged `workflow` scope required to write into `.github/workflows/`.
+
+- **Cause:** GitHub treats GitHub Actions workflows as sensitive security boundaries. A compromised third-party app or token with standard `repo` scope could inject malicious CI/CD code (e.g. secret stealers or crypto-miners). Therefore, GitHub strictly mandates that any OAuth app or CLI pushing to `.github/workflows/*.yml` must be explicitly authorized with the dedicated `workflow` permission scope.
+- **Fix:** Refresh the GitHub CLI authentication session to add the `workflow` scope:
+  ```powershell
+  gh auth refresh -s workflow
+  ```
+
+![GitHub Device Authorization](images/p10-step8-github-device-authorization-prompt.png)
+*Console State:* Executing `gh auth refresh -s workflow` prints an 8-character one-time verification code in PowerShell (e.g. `XXXX-XXXX`) and automatically opens `https://github.com/login/device`. Pasting the code and clicking **Continue ➔ Authorize github** initiates the additional scope approval.
+
+![GitHub CLI Requesting Workflow Scope](images/p10-step8-github-cli-authorize-workflow-scope.png)
+*Console State:* On `https://github.com/login/device/confirmation`, GitHub displays the explicit permission elevation request: `"GitHub CLI by GitHub would like additional permissions to: Workflow (Update GitHub Action workflow files)"`. Clicking the green **`Authorize github`** button permanently grants workflow permissions to the local CLI session.
+
+![GitHub Device Authorization Success](images/p10-step8-github-device-connected-success.png)
+*Console State:* Browser navigates to `https://github.com/login/device/success` rendering green confirmation: `"Congratulations, you're all set! Your device is now connected."` GitHub CLI is now fully authorized with the `workflow` OAuth scope.
+
+  Complete the browser/device code authentication prompt, then re-push cleanly:
+  ```powershell
+  git push -u origin main
+  ```
+
+### Gotcha 10: OIDC AssumeRole Denied — "Not authorized to perform sts:AssumeRoleWithWebIdentity" (Subject Claim `sub` Mismatch)
+- **Symptom:** In the GitHub Actions runner execution log for step `Configure AWS Credentials via OIDC`, the workflow fails with:
+  ```text
+  Assuming role with OIDC
+  Assuming role with OIDC
+  ...
+  ##[error]Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity
+  ```
+
+![GitHub Actions OIDC AssumeRole Failed Annotation](images/p10-step8-github-actions-oidc-error-annotations.png)
+*Console State:* In **GitHub Actions ➔ Summary**, the workflow execution reports `Annotations: 1 error`: `"Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity"`. AWS STS denied role assumption due to token claim mismatch.
+- **Cause:** 
+  1. OpenID Connect relies on cryptographic claims packaged inside a JSON Web Token (JWT) issued by GitHub's token authority (`token.actions.githubusercontent.com`).
+  2. When GitHub Actions triggers, the JWT contains:
+     - `iss`: `https://token.actions.githubusercontent.com`
+     - `aud`: `sts.amazonaws.com`
+     - `sub`: `repo:<owner>/<repo-name>:ref:refs/heads/<branch>` (e.g. `repo:akshat009/Aws-wp-lab:ref:refs/heads/main`).
+  3. In AWS IAM, the Role's **Trust Policy** defines who is permitted to call `sts:AssumeRoleWithWebIdentity`.
+  4. When the role is created via the AWS Console wizard before the repository is created on GitHub, the wizard creates a broad or malformed condition (e.g. `"repo:akshat009/*:*"` or `"repo:akshat009:*"` with `StringEquals`). Because the format has colons separating repo, ref type, and branch, any mismatch between the token's `sub` claim and the IAM Trust Policy condition results in AWS STS returning `HTTP 403 AccessDenied`.
+- **Architectural Trade-offs & Security Risks:**
+  - **Overly Permissive Anti-Pattern:** Setting `"token.actions.githubusercontent.com:sub": "repo:*"` allows *any* GitHub repository in the world to assume your AWS Administrator role!
+  - **Overly Restrictive Anti-Pattern:** Setting `StringEquals` to `"repo:akshat009/Aws-wp-lab:ref:refs/heads/main"` breaks Pull Request checks (`pull_request` event has `ref:refs/pull/1/merge` which fails `StringEquals`).
+  - **Enterprise Best Practice:** Use `StringLike` scoped to the exact repository followed by a wildcard `*` (`repo:akshat009/Aws-wp-lab:*`).
+- **Fix & Clean Resolution:**
+  1. Open **AWS Management Console** ➔ **IAM** ➔ **Roles** ➔ Click **`GitHubActionsTerraformRole`**.
+  2. Navigate to **Trust relationships** tab ➔ Click **Edit trust policy**.
+  3. Update the trust policy to use `StringLike` matching the repository namespace:
+     ```json
+     {
+       "Version": "2012-10-17",
+       "Statement": [
+         {
+           "Effect": "Allow",
+           "Principal": {
+             "Federated": "arn:aws:iam::538820337783:oidc-provider/token.actions.githubusercontent.com"
+           },
+           "Action": "sts:AssumeRoleWithWebIdentity",
+           "Condition": {
+             "StringEquals": {
+               "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+             },
+             "StringLike": {
+               "token.actions.githubusercontent.com:sub": [
+                 "repo:akshat009/Aws-wp-lab:*",
+                 "repo:akshat009/aws-wp-lab:*"
+               ]
+             }
+           }
+         }
+       ]
+     }
+     ```
+
+![Edit Trust Policy Wildcard Advisory Warning](images/p10-gotcha10-edit-trust-policy-wildcard-warning.png)
+*Console State:* In **IAM ➔ Roles ➔ GitHubActionsTerraformRole ➔ Edit trust policy**, pasted the updated repository trust policy. AWS displays `Errors: 0` and an advisory notification: `"Using a wildcard (*) in token.actions.githubusercontent.com:sub can allow requests from more sources than you intended"`. This warning confirms that both `main` branch pushes and Pull Request workflows from `akshat009/Aws-wp-lab` can assume the role. Ready to finalize via orange **`Update policy`** button.
+
+#### ⚠️ Deep Dive: Why AWS Displays "Warnings: 1" for Wildcard (*) in `sub`:
+- **The AWS Advisory Warning:**
+  > *"Using a wildcard (*) in token.actions.githubusercontent.com:sub can allow requests from more sources than you intended. Specify the value of token.actions.githubusercontent.com:sub with the repository and branch name. If the subject claim does not include the branch, specify it in a token.actions.githubusercontent.com:ref condition key."*
+- **Why This Warning is 100% Safe & Architecturally Necessary (The GitOps Reality):**
+  1. **AWS's Ultra-Defensive Stance:** AWS IAM warns you because it considers locking down the role to a single hardcoded branch (like `main`) as the strictest possible constraint.
+  2. **Why Locking to `main` Breaks GitOps Workflows:** In real-world software engineering, developers do not push directly to `main`. They create feature branches (e.g., `feat/rds-multi-az`) and submit **Pull Requests (PRs)**. During a PR, GitHub Actions automatically executes `terraform plan` to preview the cost and infrastructure diff *before* merging.
+  3. **The Token Ref Format Difference:**
+     - A push to `main` sends `sub`: `repo:akshat009/Aws-wp-lab:ref:refs/heads/main`.
+     - A Pull Request sends `sub`: `repo:akshat009/Aws-wp-lab:pull_request` (or `ref:refs/pull/1/merge`).
+     If you eliminate the `*` wildcard and hardcode `:ref:refs/heads/main`, every single Pull Request pipeline run will immediately crash with `HTTP 403 / AssumeRoleWithWebIdentity AccessDenied`!
+  4. **The Security Guarantee:** Because the condition begins with `repo:akshat009/Aws-wp-lab:*`, **zero outside repositories can ever assume this role**. Only GitHub Actions pipelines running code inside your exact repository can authenticate. This strikes the perfect balance between Zero-Trust least privilege and functional GitOps automation.
+
+  4. Click **Update policy** to apply the fix.
+
+![IAM Trust Policy Updated Success](images/p10-gotcha10-trust-policy-updated-success.png)
+*Console State:* Clicked orange button **`Update policy`**. Top green confirmation banner confirmed: `"Trust policy updated."` The IAM Role now actively trusts both `repo:akshat009/Aws-wp-lab:*` and `repo:akshat009/aws-wp-lab:*` with `sts.amazonaws.com` audience, allowing GitHub Actions OIDC to authenticate passwordless.
+
+### Gotcha 11: GitHub Actions OIDC Default Audience Mismatch (`aud` Claim: Repo Owner URL vs `sts.amazonaws.com`)
+- **Symptom:** Even after updating the IAM Role Trust Policy with valid `repo:akshat009/Aws-wp-lab:*` subject conditions, GitHub Actions continues to fail at `Configure AWS Credentials via OIDC` with:
+  ```text
+  ##[error]Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity
+  ```
+- **Cause (The Implicit Default Audience Pitfall):**
+  1. OpenID Connect relies on the `aud` (Audience / Client ID) claim to prevent token replay attacks across different platforms.
+  2. In AWS IAM, the OIDC Identity Provider and Role Trust Policy explicitly require:
+     ```json
+     "StringEquals": {
+       "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+     }
+     ```
+  3. However, under GitHub's official OIDC specification, when a workflow step uses `aws-actions/configure-aws-credentials` without an explicit `audience` parameter, GitHub's token authority defaults the minted JWT's `aud` claim to the **repository owner URL** (e.g., `https://github.com/akshat009`).
+  4. When GitHub Actions presents this JWT to AWS STS, STS inspects `aud`. Because `https://github.com/akshat009` does not equal `sts.amazonaws.com`, AWS STS terminates the authentication handshake with `HTTP 403 AccessDenied`.
+- **Architectural Security Purpose (Why Audience Exists):**
+  - Audience validation prevents "Confused Deputy" attacks. If AWS STS accepted tokens with arbitrary audiences, a token minted for a harmless third-party reporting service could be intercepted and maliciously used to assume high-privilege AWS IAM administrator roles.
+- **Fix & Clean Resolution:**
+  Explicitly pass `audience: sts.amazonaws.com` in `.github/workflows/terraform.yml`:
+  ```yaml
+  - name: Configure AWS Credentials via OIDC
+    uses: aws-actions/configure-aws-credentials@v4
+    with:
+      role-to-assume: arn:aws:iam::538820337783:role/GitHubActionsTerraformRole
+      aws-region: ap-south-1
+      audience: sts.amazonaws.com
+  ```
+  Additionally, adding an OIDC inspection debug step (`curl -sLS "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" ... | jq .`) allows developers to decode and audit the live JWT payload (`iss`, `aud`, `sub`) directly in CI runner logs.
 
 </details>
 

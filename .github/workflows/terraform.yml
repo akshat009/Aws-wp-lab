@@ -25,12 +25,21 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. Authenticate to AWS via OIDC (Zero Static Keys!)
+      # 2. Inspect OIDC Token Claims (Debug)
+      - name: Inspect OIDC Token Claims
+        run: |
+          TOKEN=$(curl -sLS "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" -H "User-Agent: actions/runner" -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}")
+          JWT=$(echo $TOKEN | jq -r '.value')
+          echo "=== Decoded OIDC JWT Payload ==="
+          echo $JWT | cut -d. -f2 | base64 -d 2>/dev/null | jq '{iss, aud, sub, repository, repository_owner, ref, event_name}'
+
+      # 3. Authenticate to AWS via OIDC (Zero Static Keys!)
       - name: Configure AWS Credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::538820337783:role/GitHubActionsTerraformRole
           aws-region: ap-south-1
+          audience: sts.amazonaws.com
 
       # 3. Setup Terraform CLI on the runner
       - name: Setup Terraform
