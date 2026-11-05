@@ -1099,6 +1099,74 @@ Apply complete! Resources: 0 added, 0 changed, 0 destroyed.
 
 
 <details>
+<summary><h3>🛡️ Step 9 Execution Details: Revoke & Delete Root Access Keys (Enforce Zero-Trust)</h3></summary>
+
+## Step 9 Execution Details: Revoke & Delete Root Access Keys (Enforce Zero-Trust)
+
+With GitHub Actions passwordless CI/CD established via AWS IAM OIDC, permanent static credentials are no longer required on developer workstations.
+
+### 1. Zero-Trust Security Enforcement:
+- Navigated to **AWS Management Console ➔ Security credentials ➔ Access keys**.
+- Permanently deleted root access key `AKIAX25BR4B3TYTG22TW`.
+- **Enforces AWS Foundational Security Best Practice:** Zero permanent static access keys exist on developer laptops or in CI/CD configuration.
+- All deployments now execute exclusively through short-lived, cryptographically signed 15-minute AWS STS session tokens.
+
+</details>
+
+---
+
+<details>
+<summary><h3>🏁 Step 10 Execution Details: Verify "Done When" Criteria (Teardown & Automated Rebuild)</h3></summary>
+
+## Step 10 Execution Details: Verify "Done When" Criteria (Teardown & Automated Rebuild)
+
+The definitive success metric of Phase 10 is the automated lifecycle test:
+> *"Done when: `terraform destroy` then `terraform apply` brings the site back"*
+
+### 1. Dual-Action GitOps Workflow (`workflow_dispatch`):
+To enable safe manual execution of destroy and rebuild without granting static credentials to developer laptops, `.github/workflows/terraform.yml` includes an on-demand dispatcher:
+
+```yaml
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Terraform Action to execute"
+        required: true
+        default: "apply"
+        type: choice
+        options:
+          - apply
+          - destroy
+```
+
+### 2. Execution Phase A: Infrastructure Teardown (`terraform destroy`):
+- **Command:** `gh workflow run terraform.yml -f action=destroy`
+- **Result:**
+  - GitHub Actions requests OIDC STS session token.
+  - Terraform locks state in DynamoDB table `wp-lab-tf-locks`.
+  - Terminates EC2 instance `wp-lab-tf` and deletes Security Group `wp-lab-web-sg`.
+  - Destroys 2 resources; releases DynamoDB lock.
+  - Verified in AWS EC2 Console: Instance state = `Terminated`. Site at previous IP is completely offline.
+
+### 3. Execution Phase B: Automated Rebuild (`terraform apply`):
+- **Command:** `gh workflow run terraform.yml -f action=apply`
+- **Result:**
+  - Terraform re-authenticates via OIDC, acquires DynamoDB lock.
+  - Provisions brand-new Security Group and EC2 instance in `ap-south-1`.
+  - EC2 executes `install.sh` bootstrap script, installing Apache, PHP 8.3, and WordPress core.
+  - Output displays new public IP and website URL.
+  - Verified in browser: `http://<New-IP>/wp-admin/install.php` loads cleanly (`200 OK`).
+
+</details>
+
+---
+
+<details>
 <summary><h3>💡 Execution Details & Real-World Gotchas</h3></summary>
 
 ## Execution Details & Real-World Gotchas

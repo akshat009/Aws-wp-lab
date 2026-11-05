@@ -7,6 +7,16 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Terraform Action to execute"
+        required: true
+        default: "apply"
+        type: choice
+        options:
+          - apply
+          - destroy
 
 permissions:
   id-token: write # Required for requesting the OIDC JWT token from GitHub
@@ -41,26 +51,31 @@ jobs:
           aws-region: ap-south-1
           audience: sts.amazonaws.com
 
-      # 3. Setup Terraform CLI on the runner
+      # 4. Setup Terraform CLI on the runner
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.10.0
 
-      # 4. Initialize Terraform against Remote S3 Backend + DynamoDB Lock
+      # 5. Initialize Terraform against Remote S3 Backend + DynamoDB Lock
       - name: Terraform Init
         run: terraform init
 
-      # 5. Validate HCL Syntax
+      # 6. Validate HCL Syntax
       - name: Terraform Validate
         run: terraform validate
 
-      # 6. Generate Execution Plan
+      # 7. Generate Execution Plan (Only if NOT destroy)
       - name: Terraform Plan
+        if: github.event.inputs.action != 'destroy'
         run: terraform plan -no-color
 
-      # 7. Apply Changes Automatically (Only on Merge to Main)
+      # 8. Apply Changes Automatically (On Push to Main or Dispatch Apply)
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
         run: terraform apply -auto-approve
 
+      # 9. Destroy Infrastructure on Demand (Only on Explicit Dispatch Destroy)
+      - name: Terraform Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
+        run: terraform destroy -auto-approve
