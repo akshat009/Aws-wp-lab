@@ -1529,6 +1529,25 @@ Apply complete! Resources: 0 added, 0 changed, 0 destroyed.
   - Remote S3 bucket with **SSE-KMS server-side encryption** and **S3 Versioning** (to restore corrupted state).
   - **DynamoDB State Locking:** Prevents race conditions by locking `LockID` during active `plan`/`apply` runs so two engineers or pipelines cannot write simultaneously.
 
+### 5. Infrastructure Provisioning (Terraform) vs Application Configuration (WP-CLI / Docker)
+- **Discussion Context:** Why does visiting `http://35.154.176.166` display the WordPress Installation Wizard instead of a fully configured, logged-in dashboard? Does Terraform only do "basic" setup?
+- **The Core Architectural Boundary (Separation of Concerns):**
+  - **Infrastructure as Code (IaC - Terraform):** "Building the House" (VPC, Subnets, Security Groups, EC2 compute instances, S3 storage, RDS databases).
+  - **Configuration Management / Application Deployment (Ansible, WP-CLI, Docker):** "Furnishing the House" (Configuring `wp-config.php`, running database schema migrations, installing themes/plugins, creating admin users).
+- **Can Terraform Automate Full Application Setup?**
+  - Yes! Adding WP-CLI commands (`wp core install --url=... --title=... --admin_user=...`) to `install.sh` would automatically complete the WordPress installation without human browser interaction.
+- **Why Enterprises Strictly Decouple Infrastructure from Application (The Trade-offs):**
+  1. **Blast Radius & Re-creation Danger:** Terraform tracks infrastructure resources, not database rows. If an engineer updates an EC2 AMI ID or changes a security group rule, Terraform might trigger an instance replacement (destroy + recreate). If the application state and database credentials were tied directly to that instance lifecycle, all user data would be destroyed.
+  2. **Lifecycle & Velocity Mismatch:** Infrastructure changes occur infrequently (e.g. once a month for capacity planning or networking). Application deployments (code changes, content updates, plugin patches) occur dozens of times a day. Tying application deployments directly to Terraform runs risks accidental infrastructure modifications on daily code deploys.
+  3. **Role Separation (DevOps vs App Developers):** Cloud engineering teams maintain the infrastructure foundations via Terraform; application developers maintain application code, Docker containers, and CI/CD releases.
+
+| Dimension | Infrastructure as Code (Terraform) | Configuration Management (Ansible / WP-CLI) | Containerization (Docker - Post-Phase 12) |
+| :--- | :--- | :--- | :--- |
+| **Primary Scope** | Cloud resources: EC2, RDS, VPC, S3, ALB. | In-OS config: packages, files, services, `wp-config.php`. | Immutable package: OS + Apache + PHP + WordPress core. |
+| **Execution Trigger** | Cloud infrastructure provisioning / resizing. | Post-boot bootstrap, server patching, app config. | Container startup on ECS, EKS, or Docker host. |
+| **State Awareness** | Tracks cloud resource ARNs and metadata in `.tfstate`. | Procedural / idempotent OS command execution. | Stateless container image running against remote RDS/S3. |
+| **Enterprise Best Practice** | Day-0 provisioning of the underlying compute & network. | Day-1 configuration of software and application runtime. | Modern standard: eliminates in-place server configuration. |
+
 ### ⚖️ Enterprise vs Lab Architecture Trade-off Matrix
 
 | Dimension | Static Keys / Local Apply (Lab Setup) | IAM SSO + OIDC + GitOps CI/CD (Enterprise) | Real-World Trade-off (What it Costs) |
@@ -1605,5 +1624,21 @@ Apply complete! Resources: 0 added, 0 changed, 0 destroyed.
     - An IAM Role federated with OIDC strictly enforces that the caller must match the exact repository namespace (`repo:akshat009/Aws-wp-lab:*`). Even if a malicious actor acquires the Role ARN, it is completely inert outside the authenticated GitHub runner.
   - **The Bank Account Analogy (Why Role ARN is Not a Secret):**
     - Committing a Role ARN to Git is like sharing a bank account number: an account number is merely an address/identifier, not a credential. Money cannot be withdrawn without a cryptographic signature (the OIDC JWT verified by AWS STS).
+
+### Q9: Why does Terraform provision the web server and WordPress core files, but leave the application setup (database schema, site title, admin credentials) unconfigured? Why not automate the complete WordPress installation inside Terraform?
+- **Answer:**
+  - **1. Separation of Concerns (IaC vs App Deployment):**
+    - Terraform is a declarative **Infrastructure Provisioning** tool designed to manage cloud resource lifecycles (EC2 virtual machines, VPC networks, RDS databases, S3 storage buckets).
+    - Application configuration (creating database tables, provisioning WordPress admin accounts, setting up plugins) is the domain of **Configuration Management / Application Deployment** tools (WP-CLI, Ansible, or immutable Docker containers).
+  - **2. Blast Radius & Lifecycle Velocity Mismatch:**
+    - Infrastructure foundations evolve on a slow lifecycle (monthly architectural resizing, network updates).
+    - Application code and content updates evolve on a rapid lifecycle (multiple daily pushes).
+    - If application installation is tightly coupled to Terraform's `user_data`, every code deployment would require executing `terraform apply` with high-privilege cloud IAM credentials, exposing the underlying VPC and database infrastructure to accidental drift or unintended destruction.
+  - **3. The Re-creation Danger (Stateless vs Stateful Boundaries):**
+    - In Terraform, updating certain EC2 properties forces an instance replacement (`Destroy and Recreate`).
+    - By decoupling infrastructure provisioning from application state, the compute layer can be destroyed and rebuilt without corrupting or destroying application databases (RDS) or media files (S3).
+  - **4. Production Standard (The Docker Evolution):**
+    - In Phase 10, Terraform automates Day-0 web stack provisioning (Apache + PHP 8.3 + WordPress files).
+    - In modern cloud-native architectures (Bonus Phase: Docker & ECS/EKS), WordPress is packaged as a pre-baked, immutable Docker container image. Terraform provisions the ECS cluster and RDS database, while the CI/CD pipeline deploys the container, ensuring 100% automated, instant application startup without manual web installer friction.
 
 </details>
