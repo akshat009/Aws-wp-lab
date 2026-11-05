@@ -1145,33 +1145,44 @@ on:
 ```
 
 ### 2. Execution Phase A: Infrastructure Teardown (`terraform destroy`):
-- **Command:** `gh workflow run terraform.yml -f action=destroy`
-- **Result:**
-  - GitHub Actions requests OIDC STS session token.
-  - Terraform locks state in DynamoDB table `wp-lab-tf-locks`.
-  - Terminates EC2 instance `wp-lab-tf` and deletes Security Group `wp-lab-web-sg`.
-  - Destroys 2 resources; releases DynamoDB lock.
-  - Verified in AWS EC2 Console: Instance state = `Terminated`. Site at previous IP is completely offline.
+- **Trigger:** `gh workflow run terraform.yml -f action=destroy` (or GitHub Actions Dispatch)
+- **Workflow Run:** [#42028596035](https://github.com/akshat009/Aws-wp-lab/actions/runs/42028596035) (Completed in 1m 21s)
+- **Command Executed by Runner:**
+  ```bash
+  terraform destroy -auto-approve
+  ```
+- **Live Execution Log:**
+  ```text
+  ✓ main Terraform GitOps CI/CD · 42028596035
+  ✓ Terraform Plan & Apply in 1m21s (ID 127248963562)
+    ✓ Set up job
+    ✓ Checkout Code
+    ✓ Inspect OIDC Token Claims
+    ✓ Configure AWS Credentials via OIDC
+    ✓ Setup Terraform
+    ✓ Terraform Init
+    ✓ Terraform Validate
+    - Terraform Plan (Skipped: action == destroy)
+    - Terraform Apply (Skipped: action == destroy)
+    ✓ Terraform Destroy (Executed)
+    ✓ Complete job
 
-```text
-✓ main Terraform GitOps CI/CD · 42028596035
-✓ Terraform Plan & Apply in 1m21s (ID 127248963562)
-  ✓ Set up job
-  ✓ Checkout Code
-  ✓ Inspect OIDC Token Claims
-  ✓ Configure AWS Credentials via OIDC
-  ✓ Setup Terraform
-  ✓ Terraform Init
-  ✓ Terraform Validate
-  - Terraform Plan (Skipped)
-  - Terraform Apply (Skipped)
-  ✓ Terraform Destroy (Executed)
-  ✓ Complete job
+  Acquiring state lock. This may take a few moments...
+  aws_security_group.web: Refreshing state... [id=sg-035e7f0d68fe6d4dd]
+  aws_instance.wp: Refreshing state... [id=i-0af3a3266517a12c6]
 
-aws_instance.wp: Destroying... [id=i-0af3a3266517a12c6]
-aws_security_group.web: Destruction complete after 1s
-Destroy complete! Resources: 2 destroyed.
-```
+  Terraform will perform the following actions:
+    # aws_instance.wp will be destroyed
+    - resource "aws_instance" "wp" { ... }
+
+    # aws_security_group.web will be destroyed
+    - resource "aws_security_group" "web" { ... }
+
+  aws_instance.wp: Destroying... [id=i-0af3a3266517a12c6]
+  aws_security_group.web: Destruction complete after 1s
+  Destroy complete! Resources: 2 destroyed.
+  Releasing state lock. This may take a few moments...
+  ```
 
 ![Workflow Dispatch Destroy Triggered](images/p10-step10-workflow-dispatch-destroy-prompt.png)
 *Terminal State:* Executed `gh workflow run terraform.yml -f action=destroy`. Pipeline run `#42028596035` executed `terraform destroy -auto-approve` in 1m 21s via passwordless OIDC, completely destroying the compute and firewall tier.
@@ -1180,11 +1191,16 @@ Destroy complete! Resources: 2 destroyed.
 *Browser State:* Attempted to access `http://35.154.176.166`. Browser returned `ERR_CONNECTION_TIMED_OUT` ("This site can't be reached"), definitively confirming 100% cloud teardown of the EC2 instance and Security Group.
 
 ### 3. Execution Phase B: Automated Rebuild (`terraform apply`):
-- **Command:** `gh workflow run terraform.yml -f action=apply` (or automated push to `main`)
-- **Execution Log (GitHub Actions Run `#42028951514`):**
+- **Trigger:** Automated Git push to `main` (or dispatch `action=apply`)
+- **Workflow Run:** [#42028951514](https://github.com/akshat009/Aws-wp-lab/actions/runs/42028951514) (Completed in 57s)
+- **Command Executed by Runner:**
+  ```bash
+  terraform apply -auto-approve
+  ```
+- **Live Execution Log:**
   ```text
   ✓ main Terraform GitOps CI/CD · 42028951514
-  ✓ Terraform Plan & Apply in 57s
+  ✓ Terraform Plan & Apply in 57s (ID 127250682281)
     ✓ Set up job
     ✓ Checkout Code
     ✓ Inspect OIDC Token Claims
@@ -1193,8 +1209,25 @@ Destroy complete! Resources: 2 destroyed.
     ✓ Terraform Init
     ✓ Terraform Validate
     ✓ Terraform Plan
-    ✓ Terraform Apply
+    ✓ Terraform Apply (Executed)
     ✓ Complete job
+
+  Acquiring state lock. This may take a few moments...
+  Terraform will perform the following actions:
+    # aws_security_group.web will be created
+    + resource "aws_security_group" "web" { ... }
+
+    # aws_instance.wp will be created
+    + resource "aws_instance" "wp" {
+        + ami                          = "ami-0fc5120b2d80d4749"
+        + instance_type                = "t3.micro"
+        + user_data                    = "install.sh"
+      }
+
+  aws_security_group.web: Creating...
+  aws_security_group.web: Creation complete after 3s [id=sg-0e5f29910ddbaaa1d]
+  aws_instance.wp: Creating...
+  aws_instance.wp: Creation complete after 13s [id=i-0fca9a4b647516a51]
 
   Apply complete! Resources: 2 added, 0 changed, 0 destroyed.
 
@@ -1203,10 +1236,11 @@ Destroy complete! Resources: 2 destroyed.
   instance_public_dns = "ec2-35-154-149-207.ap-south-1.compute.amazonaws.com"
   instance_public_ip = "35.154.149.207"
   website_url = "http://35.154.149.207"
+  Releasing state lock. This may take a few moments...
   ```
 - **Live Verification:**
   - `http://35.154.149.207/wp-admin/install.php` returned `HTTP 200 OK`.
-  - WordPress setup wizard rendered cleanly, confirming full end-to-end automation from code.
+  - Fresh WordPress setup wizard rendered cleanly, confirming full end-to-end cloud recovery from declarative code.
   - **Phase 10 Definition of Done Officially Met!**
 
 </details>
@@ -1214,7 +1248,7 @@ Destroy complete! Resources: 2 destroyed.
 ---
 
 <details>
-<summary><h3>💡 Execution Details & Real-World Gotchas</h3></summary>
+<summary><h3>🚨 Execution Details & Real-World Gotchas</h3></summary>
 
 ## Execution Details & Real-World Gotchas
 
