@@ -1316,62 +1316,123 @@ wp-config.php
       audience: sts.amazonaws.com
   ```
   Additionally, adding an OIDC inspection debug step (`curl -sLS "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" ... | jq .`) allows developers to decode and audit the live JWT payload (`iss`, `aud`, `sub`) directly in CI runner logs.
-
-
-### Gotcha 12: GitHub OIDC Immutable Repository/Owner Numeric IDs in `sub` Claim (`@<id>`)
-- **Symptom:** Even after adding `audience: sts.amazonaws.com` and setting up the IAM Trust Policy for `"repo:akshat009/Aws-wp-lab:*"`, GitHub Actions fails at `Configure AWS Credentials via OIDC` with:
-  ```text
-  ##[error]Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity
-  ```
-- **Discovery (The Decoded OIDC Token Clue):**
-  By adding an OIDC JWT inspection step to `.github/workflows/terraform.yml`, we extracted and decoded the live token payload minted by GitHub's token endpoint (`ACTIONS_ID_TOKEN_REQUEST_URL`):
-  ```json
-  {
-    "iss": "https://token.actions.githubusercontent.com",
-    "aud": "sts.amazonaws.com",
-    "sub": "repo:akshat009@23046599/Aws-wp-lab@1446782706:ref:refs/heads/main",
-    "repository": "akshat009/Aws-wp-lab",
-    "repository_owner": "akshat009",
-    "ref": "refs/heads/main",
-    "event_name": "push"
-  }
-  ```
-- **Cause (Immutable Database IDs in Subject Claim):**
-  1. Notice the `sub` claim value:
-     `repo:akshat009@23046599/Aws-wp-lab@1446782706:ref:refs/heads/main`
-  2. GitHub Actions dynamically appends the **immutable user ID** (`@23046599`) and **immutable repository ID** (`@1446782706`) into the subject string.
-  3. **Why GitHub does this:** To prevent "repo-jacking" and "account renaming" exploits. If an organization deletes a repo or renames an account, an attacker could recreate the same repository name and inherit the AWS IAM Role if IAM only matched the plain string name. Adding immutable IDs ensures cryptographic binding to that exact database record on GitHub.
-  4. **Why AWS STS Failed:** The AWS IAM Role Trust Policy was checking `StringLike` for `"repo:akshat009/Aws-wp-lab:*"`. Because of the `@23046599` and `@1446782706` suffixes, AWS IAM evaluated `"repo:akshat009@..."` against `"repo:akshat009/..."`, which failed string matching and resulted in `sts:AssumeRoleWithWebIdentity: AccessDenied`.
-- **Fix (Multi-Pattern Condition in IAM Trust Policy):**
-  Update the IAM Role Trust Policy to include both wildcard pattern matching (`repo:akshat009*/Aws-wp-lab*:*`) and the exact immutable ID string:
-  ```json
-  {
-    "Version": "2012-10-17",
-    "Statement": [
-      {
-        "Effect": "Allow",
-        "Principal": {
-          "Federated": "arn:aws:iam::538820337783:oidc-provider/token.actions.githubusercontent.com"
-        },
-        "Action": "sts:AssumeRoleWithWebIdentity",
-        "Condition": {
-          "StringEquals": {
-            "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
-          },
-          "StringLike": {
-            "token.actions.githubusercontent.com:sub": [
-              "repo:akshat009@23046599/Aws-wp-lab@1446782706:*",
-              "repo:akshat009*/Aws-wp-lab*:*",
-              "repo:akshat009/Aws-wp-lab:*",
-              "repo:akshat009/aws-wp-lab:*"
-            ]
-          }
-        }
-      }
-    ]
-  }
-  ```
-
+
+
+
+
+### Gotcha 12: GitHub OIDC Immutable Repository/Owner Numeric IDs in `sub` Claim (`@<id>`)
+
+- **Symptom:** Even after adding `audience: sts.amazonaws.com` and setting up the IAM Trust Policy for `"repo:akshat009/Aws-wp-lab:*"`, GitHub Actions fails at `Configure AWS Credentials via OIDC` with:
+
+  ```text
+
+  ##[error]Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity
+
+  ```
+
+- **Discovery (The Decoded OIDC Token Clue):**
+
+  By adding an OIDC JWT inspection step to `.github/workflows/terraform.yml`, we extracted and decoded the live token payload minted by GitHub's token endpoint (`ACTIONS_ID_TOKEN_REQUEST_URL`):
+
+  ```json
+
+  {
+
+    "iss": "https://token.actions.githubusercontent.com",
+
+    "aud": "sts.amazonaws.com",
+
+    "sub": "repo:akshat009@23046599/Aws-wp-lab@1446782706:ref:refs/heads/main",
+
+    "repository": "akshat009/Aws-wp-lab",
+
+    "repository_owner": "akshat009",
+
+    "ref": "refs/heads/main",
+
+    "event_name": "push"
+
+  }
+
+  ```
+
+- **Cause (Immutable Database IDs in Subject Claim):**
+
+  1. Notice the `sub` claim value:
+
+     `repo:akshat009@23046599/Aws-wp-lab@1446782706:ref:refs/heads/main`
+
+  2. GitHub Actions dynamically appends the **immutable user ID** (`@23046599`) and **immutable repository ID** (`@1446782706`) into the subject string.
+
+  3. **Why GitHub does this:** To prevent "repo-jacking" and "account renaming" exploits. If an organization deletes a repo or renames an account, an attacker could recreate the same repository name and inherit the AWS IAM Role if IAM only matched the plain string name. Adding immutable IDs ensures cryptographic binding to that exact database record on GitHub.
+
+  4. **Why AWS STS Failed:** The AWS IAM Role Trust Policy was checking `StringLike` for `"repo:akshat009/Aws-wp-lab:*"`. Because of the `@23046599` and `@1446782706` suffixes, AWS IAM evaluated `"repo:akshat009@..."` against `"repo:akshat009/..."`, which failed string matching and resulted in `sts:AssumeRoleWithWebIdentity: AccessDenied`.
+
+- **Fix (Multi-Pattern Condition in IAM Trust Policy):**
+
+  Update the IAM Role Trust Policy to include both wildcard pattern matching (`repo:akshat009*/Aws-wp-lab*:*`) and the exact immutable ID string:
+
+  ```json
+
+  {
+
+    "Version": "2012-10-17",
+
+    "Statement": [
+
+      {
+
+        "Effect": "Allow",
+
+        "Principal": {
+
+          "Federated": "arn:aws:iam::538820337783:oidc-provider/token.actions.githubusercontent.com"
+
+        },
+
+        "Action": "sts:AssumeRoleWithWebIdentity",
+
+        "Condition": {
+
+          "StringEquals": {
+
+            "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+
+          },
+
+          "StringLike": {
+
+            "token.actions.githubusercontent.com:sub": [
+
+              "repo:akshat009@23046599/Aws-wp-lab@1446782706:*",
+
+              "repo:akshat009*/Aws-wp-lab*:*",
+
+              "repo:akshat009/Aws-wp-lab:*",
+
+              "repo:akshat009/aws-wp-lab:*"
+
+            ]
+
+          }
+
+        }
+
+      }
+
+    ]
+
+  }
+
+  ```
+
+*Console State:* Updated the IAM Role Trust Policy with GitHub's immutable numeric identifiers (`repo:akshat009@23046599/Aws-wp-lab@1446782706:*`). Top green banner confirms `"Trust policy updated."`.
+
+![IAM Role Trust Policy Updated with Immutable IDs](images/p10-step8-iam-trust-policy-immutable-id-updated.png)
+
+
+
+
 </details>
 
 ---
