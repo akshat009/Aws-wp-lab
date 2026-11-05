@@ -1548,6 +1548,51 @@ Apply complete! Resources: 0 added, 0 changed, 0 destroyed.
 | **State Awareness** | Tracks cloud resource ARNs and metadata in `.tfstate`. | Procedural / idempotent OS command execution. | Stateless container image running against remote RDS/S3. |
 | **Enterprise Best Practice** | Day-0 provisioning of the underlying compute & network. | Day-1 configuration of software and application runtime. | Modern standard: eliminates in-place server configuration. |
 
+### 6. Domain & Traffic Routing: Static Elastic IP (A Record) vs Load Balancer / CloudFront (Alias Record)
+- **Discussion Context:** In Phase 10 prototyping, Terraform outputs a raw dynamic public IP (`http://35.154.176.166`). How does an enterprise map a custom domain (e.g. `https://lab.asaxenadev.com`) via code, and should Route 53 point directly to an EC2 instance?
+- **How Route 53 Mappings Work in Terraform:**
+  1. **Direct EC2 Pattern (Lab / Dev):**
+     An `aws_eip` resource creates a permanent public IP, and an `aws_route53_record` (Type `A`) routes domain traffic directly to the instance:
+     ```hcl
+     resource "aws_eip" "wp_eip" {
+       instance = aws_instance.wp.id
+     }
+
+     resource "aws_route53_record" "wp_domain" {
+       zone_id = var.hosted_zone_id
+       name    = "lab.asaxenadev.com"
+       type    = "A"
+       ttl     = 300
+       records = [aws_eip.wp_eip.public_ip]
+     }
+     ```
+  2. **Enterprise Production Pattern (Zero-Downtime HA):**
+     In production, pointing a domain directly to an EC2 IP is strictly avoided. Route 53 maps via an **Alias Record** to an **Application Load Balancer (ALB)** or **Amazon CloudFront CDN**:
+     ```hcl
+     resource "aws_route53_record" "wp_alias" {
+       zone_id = var.hosted_zone_id
+       name    = "lab.asaxenadev.com"
+       type    = "A"
+
+       alias {
+         name                   = aws_lb.wp_alb.dns_name
+         zone_id                = aws_lb.wp_alb.zone_id
+         evaluate_target_health = true
+       }
+     }
+     ```
+- **The 3 Critical Production Trade-offs (Why Direct EC2 IP Fails in Production):**
+  1. **Single Point of Failure (High Availability):** If that single EC2 instance experiences kernel panic, hardware failure, or an AZ outage, the entire domain goes completely offline. An ALB continuously health-checks a fleet of EC2 instances across multiple Availability Zones, automatically routing traffic away from failed nodes.
+  2. **SSL/TLS Certificate Lifecycle Debt:** Managing Let's Encrypt certificates directly inside an EC2 instance requires OS-level certbot cron jobs, which frequently fail or break during system upgrades. With an ALB/CloudFront, AWS Certificate Manager (ACM) provisions free public SSL certificates with **100% automated renewal**, terminating SSL at the load balancer with zero compute overhead on WordPress.
+  3. **Auto-Scaling & Blue/Green Deployments:** A static IP binds a domain to one specific physical server. An ALB decouples the public endpoint from the backend compute tier, enabling dynamic Auto Scaling Groups (Phase 9) and seamless zero-downtime rolling/canary deployments.
+
+| Dimension | Route 53 ➔ EC2 Elastic IP (Direct) | Route 53 ➔ ALB / CloudFront (Alias Record) | Enterprise Trade-off (Interview Answer) |
+| :--- | :--- | :--- | :--- |
+| **High Availability** | **Zero:** Single point of failure if EC2 crashes. | **Multi-AZ Redundancy:** Automatic health checks and failover. | ALB prevents total site downtime during hardware or instance failures. |
+| **SSL/TLS Termination** | In-OS via Certbot / Apache (Manual cron maintenance). | **AWS ACM Managed:** Free, zero-maintenance auto-renewing SSL. | Eliminates certificate expiry outages and offloads TLS crypto from EC2. |
+| **Scalability** | Fixed to 1 single virtual machine. | **Elastic:** Distributes load across 1 to 100+ auto-scaling instances. | Required foundation for auto-scaling stateless WordPress fleets (Phase 9). |
+| **Architecture Cost** | Low (Elastic IP is free when attached to a running instance). | Higher (~$16–$22/month baseline for ALB). | Cost of ALB is mandatory enterprise insurance against downtime. |
+
 ### ⚖️ Enterprise vs Lab Architecture Trade-off Matrix
 
 | Dimension | Static Keys / Local Apply (Lab Setup) | IAM SSO + OIDC + GitOps CI/CD (Enterprise) | Real-World Trade-off (What it Costs) |
@@ -1640,5 +1685,17 @@ Apply complete! Resources: 0 added, 0 changed, 0 destroyed.
   - **4. Production Standard (The Docker Evolution):**
     - In Phase 10, Terraform automates Day-0 web stack provisioning (Apache + PHP 8.3 + WordPress files).
     - In modern cloud-native architectures (Bonus Phase: Docker & ECS/EKS), WordPress is packaged as a pre-baked, immutable Docker container image. Terraform provisions the ECS cluster and RDS database, while the CI/CD pipeline deploys the container, ensuring 100% automated, instant application startup without manual web installer friction.
+
+### Q10: In Terraform, how do you map a domain to your infrastructure, and why shouldn't Route 53 point directly to an EC2 Elastic IP in production?
+- **Answer:**
+  - **The Direct IP Anti-Pattern:**
+    - Mapping an `A` record directly to an EC2 Elastic IP binds the domain to a single virtual machine.
+    - *Fatal Weaknesses:* It introduces a **Single Point of Failure (SPOF)** — if the instance crashes, undergoes patching, or fails an AZ health check, the site is completely dead. Furthermore, SSL certificates must be managed locally on the host (e.g. Certbot cron jobs), risking certificate expiration downtime.
+  - **The Production Standard (Route 53 Alias to ALB / CloudFront):**
+    - In enterprise architectures, Route 53 uses an **Alias `A` Record** pointing to an Application Load Balancer (ALB) or Amazon CloudFront distribution (`aws_route53_record.alias`).
+    - *Key Architectural Benefits:*
+      1. **Multi-AZ High Availability:** The ALB health-checks target EC2 instances across multiple Availability Zones and routes requests exclusively to healthy nodes.
+      2. **Centralized SSL/TLS Offloading:** AWS Certificate Manager (ACM) provisions free SSL certificates that auto-renew without human intervention, terminating encryption at the load balancer.
+      3. **Horizontal Auto-Scaling:** Decouples the domain from backend compute, allowing the WordPress web tier to scale dynamically from 2 to 50 instances based on CPU and request count.
 
 </details>
