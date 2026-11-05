@@ -1176,6 +1176,9 @@ Destroy complete! Resources: 2 destroyed.
 ![Workflow Dispatch Destroy Triggered](images/p10-step10-workflow-dispatch-destroy-prompt.png)
 *Terminal State:* Executed `gh workflow run terraform.yml -f action=destroy`. Pipeline run `#42028596035` executed `terraform destroy -auto-approve` in 1m 21s via passwordless OIDC, completely destroying the compute and firewall tier.
 
+![Site Unreachable Following Terraform Destroy](images/p10-step10-teardown-site-unreachable.png)
+*Browser State:* Attempted to access `http://35.154.176.166`. Browser returned `ERR_CONNECTION_TIMED_OUT` ("This site can't be reached"), definitively confirming 100% cloud teardown of the EC2 instance and Security Group.
+
 ### 3. Execution Phase B: Automated Rebuild (`terraform apply`):
 - **Command:** `gh workflow run terraform.yml -f action=apply`
 - **Result:**
