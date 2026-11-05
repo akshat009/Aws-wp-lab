@@ -161,7 +161,9 @@ Agar `aws_s3_bucket` aur `backend "s3"` ek hi folder ke `main.tf` mein likh diye
   - Configured `backend "s3"` in `infra/main.tf`; migrated local state to S3 (`prod/terraform.tfstate`) with DynamoDB lock table `wp-lab-tf-locks`. Local state file vacated to 0 bytes.
 - [x] **Step 7: Configure AWS IAM OIDC Provider & GitHub Actions Role**
   - Established OpenID Connect cryptographic trust with GitHub Actions (`token.actions.githubusercontent.com`) and provisioned IAM Role `GitHubActionsTerraformRole` scoped to repository user `akshat009` with `AdministratorAccess` permissions.
-- [ ] **Step 8: Setup GitHub Actions GitOps CI/CD Workflow (`.github/workflows/terraform.yml`)**
+- [x] **Step 8: Setup GitHub Actions GitOps CI/CD Workflow (`.github/workflows/terraform.yml`)**
+  - Configured passwordless GitHub Actions GitOps workflow with IAM OIDC authentication (`sts.amazonaws.com`).
+  - Verified automated `terraform init`, `validate`, `plan`, and `apply` execution: 100% green (`✓ 46s`), zero-drift (`0 added, 0 changed, 0 destroyed`).
   - Configure automated `terraform plan` on Pull Requests and `terraform apply` on merge to `main`.
 - [ ] **Step 9: Revoke & Delete Root Access Keys**
   - Enforce Zero-Trust Security by deleting all static access keys from AWS Console.
@@ -1067,6 +1069,29 @@ wp-config.php
 
 ![GitHub Actions All Workflows Dashboard](images/p10-step8-github-actions-all-workflows-list.png)
 *Console State:* In **GitHub ➔ Actions**, verified workflow `Terraform GitOps CI/CD` triggered automatically from the commit. Displays the execution record for `feat: phase 10 enterprise gitops terraform with oidc` on branch `main`.
+
+### 5. Verified Pipeline Execution (100% Green CI/CD):
+
+```text
+✓ main Terraform GitOps CI/CD · 42020799853
+Triggered via push
+✓ Terraform Plan & Apply in 46s (ID 127222778150)
+  ✓ Set up job
+  ✓ Checkout Code
+  ✓ Inspect OIDC Token Claims
+  ✓ Configure AWS Credentials via OIDC
+  ✓ Setup Terraform
+  ✓ Terraform Init
+  ✓ Terraform Validate
+  ✓ Terraform Plan
+  ✓ Terraform Apply
+  ✓ Post Configure AWS Credentials via OIDC
+  ✓ Post Checkout Code
+  ✓ Complete job
+
+Apply complete! Resources: 0 added, 0 changed, 0 destroyed.
+```
+*Pipeline State:* Successfully assumed IAM Role `GitHubActionsTerraformRole` passwordlessly via GitHub OIDC JWT, verified remote state in S3 `wp-lab-tfstate-538820337783` with DynamoDB lock table `wp-lab-tf-locks`, validated zero infrastructure drift, and completed `terraform apply` in 46 seconds without a single static AWS secret!
 
 </details>
 
